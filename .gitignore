@@ -143,3 +143,9 @@ checklink/cookies.txt
 nbs/wandb/
 examples/notebooks/wandb/
 wandb/
+
+# Models
+examples/summarization/scripts/gpt2_summarization_reward_model
+examples/summarization/scripts/llama_hf_7B
+examples/summarization/scripts/models
+models/
