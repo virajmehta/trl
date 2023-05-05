@@ -72,6 +72,7 @@ class RewardTrainer(Trainer):
             return loss, {"rewards_j": rewards_j, "rewards_k": rewards_k}
         return loss
 
+
 def compute_metrics(eval_pred):
     predictions, _ = eval_pred
     # Here, predictions is rewards_j and rewards_k.

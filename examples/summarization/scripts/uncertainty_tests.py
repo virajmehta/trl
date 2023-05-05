@@ -22,7 +22,7 @@ import scipy.stats as stats
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from models import DropoutLLMForRewardModeling
+from models import UncertaintyEstimationLLM
 from utils import *
 
 @dataclass
@@ -61,6 +61,16 @@ class ScriptArguments:
             "help": "This essentially cuts the training time in half if you want to sacrifice a little precision and have a supported GPU."
         },
     )
+    dropout: Optional[float] = field(
+        default=0.1, metadata={"help": "The dropout rate for the reward model."}
+    )
+    ensemble: Optional[bool] = field(
+        default=False, metadata={"help": "Whether or not to ensemble the reward model"}
+    )
+    n_ensembles: Optional[int] = field(
+        default=50,
+        metadata={"help": "The number of ensemble members to use for ensembling or number of repeats for dropout"}
+    )
 
 parser = HfArgumentParser(ScriptArguments)
 script_args = parser.parse_args_into_dataclasses()[0]
@@ -87,8 +97,9 @@ elif script_args.model_name == 'llama':
     tokenizer = LlamaTokenizer.from_pretrained("llama_hf_7B")
 
 # CHANGE THIS, DON'T HAVE CHECKPOINT YET
-model = DropoutLLMForRewardModeling(num_labels=100, dropout=0.1, model_name=script_args.model_name, tokenizer=tokenizer)
-model.load_state_dict(torch.load('models/gpt2_reward_model.pt'))
+model = UncertaintyEstimationLLM(num_labels=100, dropout=script_args.dropout, model_name=script_args.model_name,
+                                    tokenizer=tokenizer, ensemble=script_args.ensemble, n_ensembles=script_args.n_ensembles)
+model.load_state_dict(torch.load('models/gpt2_reward_model_ensemble50.pt'))
 
 ds = load_dataset("openai/summarize_from_feedback", name="comparisons")
 num_proc = 8  # Can adjust to be higher if you have more processors. Should work even if you don't have 8 CPUs, though.
@@ -111,7 +122,7 @@ def turn_into_text_classification_format(examples):
 
     return new_examples
 
-random_ds = create_random_dataset(ds['train'], 10000, tokenizer.bos_token)
+random_ds = create_random_dataset(ds['train'], 100, tokenizer.bos_token)
 ds = ds.map(turn_into_text_classification_format, batched=True, num_proc=num_proc, remove_columns=original_columns)
 
 # Tokenize the dataset.
@@ -138,36 +149,18 @@ trainer = RewardTrainer(
     data_collator=RewardDataCollatorWithPadding(tokenizer=tokenizer),
 )
 
+model.set_uncertainty_mode(True)
 rewards_articles_good = []
 rewards_articles_bad = []
 rewards_random_good = []
 rewards_random_bad = []
-for _ in range(50):
-    preds_articles = trainer.predict(tokenized_ds['validation'])
-    preds_random = trainer.predict(tokenized_random_ds)
-    rewards_articles_good.append(preds_articles.predictions[0])
-    rewards_articles_bad.append(preds_articles.predictions[1])
-    rewards_random_good.append(preds_random.predictions[0])
-    rewards_random_bad.append(preds_random.predictions[1])
-# print("rewards_articles_good", rewards_articles_good)
-rewards_articles_good = np.array(rewards_articles_good)
-rewards_articles_bad = np.array(rewards_articles_bad)
-rewards_random_good = np.array(rewards_random_good)
-rewards_random_bad = np.array(rewards_random_bad)
-std_articles_good = np.std(rewards_articles_good, axis=0)
-std_articles_bad = np.std(rewards_articles_bad, axis=0)
-std_random_good = np.std(rewards_random_good, axis=0)
-std_random_bad = np.std(rewards_random_bad, axis=0)
-
-# print("std_articles_good", std_articles_good)
-# print("std_articles_bad", std_articles_bad.shape)
-# print("std_random_good", std_random_good.shape)
-# print("std_random_bad", std_random_bad.shape)
-# print("rewards_articles_good", rewards_articles_good.shape)
-# print("rewards_articles_bad", rewards_articles_bad.shape)
-# print("rewards_random_good", rewards_random_good.shape)
-# print("rewards_random_bad", rewards_random_bad.shape)
-# print("ds", len(ds['validation']))
+# for _ in range(50):
+preds_articles = trainer.predict(tokenized_ds['validation'])
+preds_random = trainer.predict(tokenized_random_ds)
+std_articles_good = np.array(preds_articles.predictions[0])
+std_articles_bad = np.array(preds_articles.predictions[1])
+std_random_good = np.array(preds_random.predictions[0])
+std_random_bad = np.array(preds_random.predictions[1])
 
 assert len(std_articles_good) == len(std_articles_bad)
 assert len(std_random_good) == len(std_random_bad)

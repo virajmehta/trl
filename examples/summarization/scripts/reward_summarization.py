@@ -16,7 +16,7 @@ from transformers import (
 from transformers.utils import PaddingStrategy
 import torch
 
-from models import DropoutLLMForRewardModeling
+from models import UncertaintyEstimationLLM
 from utils import *
 
 # Define and parse arguments.
@@ -28,7 +28,7 @@ class ScriptArguments:
 
     local_rank: Optional[int] = field(default=0, metadata={"help": "Used for multi-gpu"})
     resume_from_checkpoint: Optional[bool] = field(
-        default=True
+        default=False
         , metadata={"help": "If you want to resume training where it left off."}
     )
     deepspeed: Optional[str] = field(
@@ -54,8 +54,17 @@ class ScriptArguments:
             "help": "This essentially cuts the training time in half if you want to sacrifice a little precision and have a supported GPU."
         },
     )
-    num_train_epochs: Optional[int] = field(
+    epochs: Optional[int] = field(
         default="10", metadata={"help": "The number of training epochs for the reward model. OpenAI used 5."}
+    )
+    dropout: Optional[float] = field(
+        default=0.1, metadata={"help": "The dropout rate for the reward model."}
+    )
+    ensemble: Optional[bool] = field(
+        default=False, metadata={"help": "Whether or not to ensemble the reward model"}
+    )
+    n_ensembles: Optional[int] = field(
+        default=50, metadata={"help": "The number of ensemble members to use for ensembling or number of repeats for dropout"}
     )
 
 
@@ -71,7 +80,7 @@ training_args = TrainingArguments(
     learning_rate=script_args.learning_rate,
     per_device_train_batch_size=script_args.per_device_train_batch_size,
     per_device_eval_batch_size=script_args.per_device_eval_batch_size,
-    num_train_epochs=script_args.num_train_epochs,
+    num_train_epochs=script_args.epochs,
     weight_decay=script_args.weight_decay,
     evaluation_strategy="epoch",
     save_strategy="epoch",
@@ -88,7 +97,8 @@ if script_args.model_name == 'gpt2':
     tokenizer.pad_token = tokenizer.eos_token
 elif script_args.model_name == 'llama':
     tokenizer = LlamaTokenizer.from_pretrained("llama_hf_7B")
-model = DropoutLLMForRewardModeling(num_labels=100, dropout=0.1, model_name=script_args.model_name, tokenizer=tokenizer)
+model = UncertaintyEstimationLLM(num_labels=100, dropout=script_args.dropout, model_name=script_args.model_name,
+                                    tokenizer=tokenizer, ensemble=script_args.ensemble, n_ensembles=script_args.n_ensembles)
 # model = AutoModelForSequenceClassification.from_pretrained(script_args.model_name, num_labels=1)
 
 # Turn the dataset into pairs of post + summaries, where text_j is the preferred post + summary and text_k is the other.
@@ -144,10 +154,10 @@ trainer = RewardTrainer(
     data_collator=RewardDataCollatorWithPadding(tokenizer=tokenizer),
 )
 print(model)
-trainer.train(script_args.resume_from_checkpoint)
-trainer.save_model(f"models/gpt2_reward_model")
+# trainer.train(script_args.resume_from_checkpoint)
+# trainer.save_model(f"models/gpt2_reward_model")
 
-torch.save(model.state_dict(), 'models/gpt2_reward_model.pt')
+torch.save(model.state_dict(), f'models/gpt2_reward_model_ensemble50.pt')
 
 # Push to the hub so you can share it with people :D
 # model.push_to_hub('gpt2_reward_model')
