@@ -149,3 +149,4 @@ examples/summarization/scripts/gpt2_summarization_reward_model
 examples/summarization/scripts/llama_hf_7B
 examples/summarization/scripts/models
 models/
+examples/summarization/scripts/*.png

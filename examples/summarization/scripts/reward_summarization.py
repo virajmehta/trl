@@ -66,6 +66,15 @@ class ScriptArguments:
     n_ensembles: Optional[int] = field(
         default=50, metadata={"help": "The number of ensemble members to use for ensembling or number of repeats for dropout"}
     )
+    num_labels: Optional[int] = field(
+        default=100,
+        metadata={"help": "The dimension of the linear head for ensembles"}
+    )
+    ensemble_dropout: Optional[float] = field(
+        default=1.0,
+        metadata={"help": "Fraction of heads to use for ensemble"}
+    )
+
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -97,7 +106,7 @@ if script_args.model_name == 'gpt2':
     tokenizer.pad_token = tokenizer.eos_token
 elif script_args.model_name == 'llama':
     tokenizer = LlamaTokenizer.from_pretrained("llama_hf_7B")
-model = UncertaintyEstimationLLM(num_labels=100, dropout=script_args.dropout, model_name=script_args.model_name,
+model = UncertaintyEstimationLLM(num_labels=script_args.num_labels, dropout=script_args.dropout, model_name=script_args.model_name,
                                     tokenizer=tokenizer, ensemble=script_args.ensemble, n_ensembles=script_args.n_ensembles)
 # model = AutoModelForSequenceClassification.from_pretrained(script_args.model_name, num_labels=1)
 
@@ -154,10 +163,10 @@ trainer = RewardTrainer(
     data_collator=RewardDataCollatorWithPadding(tokenizer=tokenizer),
 )
 print(model)
-# trainer.train(script_args.resume_from_checkpoint)
+trainer.train(script_args.resume_from_checkpoint)
 # trainer.save_model(f"models/gpt2_reward_model")
 
-torch.save(model.state_dict(), f'models/gpt2_reward_model_ensemble50.pt')
+torch.save(model.state_dict(), f'models/{script_args.model_name}_reward_model_{f"ensemble{script_args.n_ensembles}_{script_args.num_labels}_{script_args.ensemble_dropout}" if script_args.ensemble else f"dropout_{script_args.num_labels}"}.pt')
 
 # Push to the hub so you can share it with people :D
 # model.push_to_hub('gpt2_reward_model')

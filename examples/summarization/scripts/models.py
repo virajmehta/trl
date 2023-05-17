@@ -12,9 +12,10 @@ from transformers import (
 )
 from transformers.utils import PaddingStrategy
 import torch
+import random
 
 class UncertaintyEstimationLLM(nn.Module):
-    def __init__(self, num_labels, model_name, tokenizer, model_path=None, dropout=0.1, ensemble=False, n_ensembles=50):
+    def __init__(self, num_labels, model_name, tokenizer, model_path=None, dropout=0.1, ensemble=False, n_ensembles=50, ensemble_dropout=1.0):
         super(UncertaintyEstimationLLM, self).__init__()
         if model_name == "gpt2":
             if model_path is not None:
@@ -32,6 +33,7 @@ class UncertaintyEstimationLLM(nn.Module):
         else:
             self.value_head = nn.Linear(num_labels, 1)
         self.uncertainty_mode = False
+        self.ensemble_dropout = ensemble_dropout
 
     def forward(self, input_ids=None, attention_mask=None):
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
@@ -42,10 +44,11 @@ class UncertaintyEstimationLLM(nn.Module):
                 head_outputs = []
                 for head in self.value_heads:
                     head_outputs.append(head(nn.ReLU()((outputs[0]))))
+                if self.ensemble_dropout:
+                    head_outputs = random.sample(head_outputs, int(len(head_outputs) * self.ensemble_dropout))
                 return torch.mean(torch.stack(head_outputs), dim=0)
         else:
             if not self.ensemble:
-                # Calculate the output n_ensembles times and return the std
                 return torch.std(torch.stack(
                     [self.value_head(nn.functional.dropout(nn.ReLU()((outputs[0])), p=self.dropout, training=True))
                      for _ in range(self.n_ensembles)]), dim=0)
@@ -53,6 +56,8 @@ class UncertaintyEstimationLLM(nn.Module):
                 head_outputs = []
                 for head in self.value_heads:
                     head_outputs.append(head(nn.ReLU()((outputs[0]))))
+                if self.ensemble_dropout:
+                    head_outputs = random.sample(head_outputs, int(len(head_outputs) * self.ensemble_dropout))
                 return torch.std(torch.stack(head_outputs), dim=0)
 
     def set_uncertainty_mode(self, uncertainty_mode):

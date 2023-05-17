@@ -71,6 +71,14 @@ class ScriptArguments:
         default=50,
         metadata={"help": "The number of ensemble members to use for ensembling or number of repeats for dropout"}
     )
+    num_labels: Optional[int] = field(
+        default=100,
+        metadata={"help": "The dimension of the linear head for ensembles"}
+    )
+    ensemble_dropout: Optional[float] = field(
+        default=1.0,
+        metadata={"help": "Fraction of heads to use for ensemble"}
+    )
 
 parser = HfArgumentParser(ScriptArguments)
 script_args = parser.parse_args_into_dataclasses()[0]
@@ -97,9 +105,9 @@ elif script_args.model_name == 'llama':
     tokenizer = LlamaTokenizer.from_pretrained("llama_hf_7B")
 
 # CHANGE THIS, DON'T HAVE CHECKPOINT YET
-model = UncertaintyEstimationLLM(num_labels=100, dropout=script_args.dropout, model_name=script_args.model_name,
+model = UncertaintyEstimationLLM(num_labels=script_args.num_labels, dropout=script_args.dropout, model_name=script_args.model_name,
                                     tokenizer=tokenizer, ensemble=script_args.ensemble, n_ensembles=script_args.n_ensembles)
-model.load_state_dict(torch.load('models/gpt2_reward_model_ensemble50.pt'))
+model.load_state_dict(torch.load(f'models/{script_args.model_name}_reward_model_{f"ensemble{script_args.n_ensembles}_{script_args.num_labels}_{script_args.ensemble_dropout}" if script_args.ensemble else f"dropout_{script_args.num_labels}"}.pt'))
 
 ds = load_dataset("openai/summarize_from_feedback", name="comparisons")
 num_proc = 8  # Can adjust to be higher if you have more processors. Should work even if you don't have 8 CPUs, though.
@@ -190,5 +198,5 @@ sns.kdeplot(std_news_bad.flatten(), label='News not preferred')
 sns.kdeplot(std_random_good.flatten(), label='Random preferred')
 sns.kdeplot(std_random_bad.flatten(), label='Random not preferred')
 plt.legend()
-plt.savefig('output.png')
+plt.savefig(f'{script_args.model_name}_{f"ensemble{script_args.n_ensembles}_{script_args.num_labels}_{script_args.ensemble_dropout}" if script_args.ensemble else f"dropout_{script_args.num_labels}"}.png')
 

@@ -68,6 +68,12 @@ class RewardTrainer(Trainer):
         rewards_j = model(input_ids=inputs["input_ids_j"], attention_mask=inputs["attention_mask_j"])
         rewards_k = model(input_ids=inputs["input_ids_k"], attention_mask=inputs["attention_mask_k"])
         loss = -nn.functional.logsigmoid(rewards_j - rewards_k).mean()
+        # Some sort of regularization to keep the weights of the ensemble heads close to each other.
+        # if 'module.value_heads.0.weight' in model.state_dict().keys():
+        #     head_weights = [torch.concat([layer.state_dict()['weight'].flatten(), layer.state_dict()['bias']]) for layer
+        #                     in model._modules['module'].value_heads]
+        #     #Calculate sum of pairwise euclidean distance between elements of head_weights
+        #     loss += 1 * sum([torch.norm(head_weights[i] - head_weights[j]) for i in range(len(head_weights)) for j in range(i+1, len(head_weights))])
         if return_outputs:
             return loss, {"rewards_j": rewards_j, "rewards_k": rewards_k}
         return loss
